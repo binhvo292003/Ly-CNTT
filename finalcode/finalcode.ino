@@ -1,103 +1,143 @@
 #include <LiquidCrystal_I2C.h>
 #include "DHTesp.h"
-// set the LCD number of columns and rows
+
 int lcdColumns = 16;
 int lcdRows = 2;
 #define DHT_PIN 14
 #define PIR_PIN 12
-/*--VQB--*/
 #define RELAY_PIN 1
 #define BUTTON_PIN 2
 #define WATER_PIN 3
 #define SOIL_PIN A0
-/*--VQB--*/
 
 DHTesp dht;
-
-// set LCD address, number of columns and rows
-// if you don't know your display address, run an I2C scanner sketch
 LiquidCrystal_I2C lcd(0x27, lcdColumns, lcdRows);
+
+int pirValue;
+float humidity;
+float temperature;
+float soil;
+int water;
+
+
+unsigned long previousLCDMillis = 0;
+const long lcdInterval = 2000;
+
+unsigned long previousWaterMillis = 0;
+const long waterInterval = 100;
+
+int buttonState = 0;
+int relayState = LOW;
+
+int pirState = LOW;
+int lastPirState = LOW;
+
 
 void setup() {
   Serial.begin(9600);
-  // setup dht
   pinMode(PIR_PIN, INPUT);
   dht.setup(DHT_PIN, DHTesp::DHT11);
-
-  // setup relay
   pinMode(RELAY_PIN, OUTPUT);
   digitalWrite(RELAY_PIN, LOW);
-
-  // setup water
   pinMode(WATER_PIN, INPUT);
-
-  // setup soil
-
-
-  // initialize LCD
   lcd.init();
-  // turn on LCD backlight
   lcd.backlight();
 }
 
 void printLCD(float humidity, float temp, float soil, int pir, int water) {
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("T:");
-  lcd.print(temp, 1);
-  lcd.print(" ");
-  lcd.print("H:");
-  lcd.print(humidity, 1);
-  lcd.setCursor(0, 1);
-  lcd.print("S:");
-  lcd.print(soil, 0);
-  lcd.print(" ");
-  if (pir == HIGH) {
-    lcd.print("M: Y");
-  } else if (pir == LOW) {
-    lcd.print("M: N");
-  }
-  delay(2000);
-  lcd.clear();
-  if (water == HIGH) {
+  if (millis() - previousLCDMillis >= lcdInterval) {
+    lcd.clear();
     lcd.setCursor(0, 0);
-    lcd.print("Water available.");
-  } else {
-    lcd.setCursor(0, 0);
-    lcd.print("Water available.");
+    lcd.print("T:");
+    lcd.print(temp, 1);
+    lcd.print(" ");
+    lcd.print("H:");
+    lcd.print(humidity, 1);
+    lcd.setCursor(0, 1);
+    lcd.print("S:");
+    lcd.print(soil, 0);
+    lcd.print(" ");
+    if (pir == HIGH) {
+      lcd.print("M: Y");
+    } else {
+      lcd.print("M: N");
+    }
+    previousLCDMillis = millis();
   }
 }
 
 void waterPlant(int soil) {
   if (soil < 50.0) {
-    digitalWrite(RELAY_PIN, HIGH);
-    delay(100);
+    if (millis() - previousWaterMillis >= waterInterval) {
+      digitalWrite(RELAY_PIN, HIGH);
+      previousWaterMillis = millis();
+    }
   } else {
     digitalWrite(RELAY_PIN, LOW);
-    delay(100);
+  }
+}
+
+void waterButton() {
+  buttonState = digitalRead(BUTTON_PIN);
+
+  if (buttonState == HIGH) {
+    if (relayState == LOW) {
+      relayState = HIGH;
+    } else {
+      relayState = LOW;
+    }
+    digitalWrite(RELAY_PIN, relayState);
+    delay(200);
   }
 }
 
 int getSoilPercent() {
-  int sensorValue = analogRead(SOIL_PIN);                   // Read the analog sensor value
-  int moisturePercent = map(sensorValue, 0, 1023, 100, 0);  // Map the sensor value to a percentage (adjust as needed)
-
+  int sensorValue = analogRead(SOIL_PIN);
+  int moisturePercent = map(sensorValue, 0, 1023, 100, 0);
   return moisturePercent;
+}
+
+void getMotion() {
+  pirState = digitalRead(PIR_PIN);  // Read the state of the PIR sensor
+
+  if (pirState != lastPirState) {  // If the PIR sensor state changes
+    if (pirState == HIGH) {
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Intruder detected!");
+      Serial.println("Intruder detected!");
+      previousLCDMillis = millis();
+    }
+    lastPirState = pirState;  // Store the current state for comparison
+  }
+}
+
+void warningWater() {
+  if (water == 0) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("OUT OF WATER");
+    Serial.println("OUT OF WATER");
+    previousLCDMillis = millis();
+  }
 }
 
 
 void loop() {
-  // Read humidity and temp from DHT11
-  int pirvalue = digitalRead(PIR_PIN);
-  float humidity = dht.getHumidity();
-  float temperature = dht.getTemperature();
-  float soil = getSoilPercent();
-  int water = digitalRead(WATER_PIN);
+  pirValue = digitalRead(PIR_PIN);
+  humidity = dht.getHumidity();
+  temperature = dht.getTemperature();
+  soil = getSoilPercent();
+  water = digitalRead(WATER_PIN);
 
   Serial.println(humidity);
   Serial.println(temperature);
 
   waterPlant(soil);
-  printLCD(humidity, temperature, soil, pirvalue, water);
+  printLCD(humidity, temperature, soil, pirValue, water);
+  waterButton();
+  getMotion();
+  warningWater();
+
   delay(200);
 }
