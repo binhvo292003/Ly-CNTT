@@ -1,5 +1,6 @@
 #include <LiquidCrystal_I2C.h>
 #include "DHTesp.h"
+#include <WiFi.h>
 
 int lcdColumns = 16;
 int lcdRows = 2;
@@ -19,6 +20,9 @@ float temperature;
 float soil;
 int water;
 
+const char* ssid = "YourWiFiNetwork"; // Change this to your WiFi network name
+const char* password = "YourWiFiPassword"; // Change this to your WiFi password
+
 
 unsigned long previousLCDMillis = 0;
 const long lcdInterval = 2000;
@@ -34,7 +38,7 @@ int lastPirState = LOW;
 
 
 void setup() {
-  Serial.begin(9600);
+   Serial.begin(9600);
   pinMode(PIR_PIN, INPUT);
   dht.setup(DHT_PIN, DHTesp::DHT11);
   pinMode(RELAY_PIN, OUTPUT);
@@ -42,6 +46,14 @@ void setup() {
   pinMode(WATER_PIN, INPUT);
   lcd.init();
   lcd.backlight();
+
+  // Connect to WiFi
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.println("Connecting to WiFi...");
+  }
+  Serial.println("Connected to WiFi!");
 }
 
 void printLCD(float humidity, float temp, float soil, int pir, int water) {
