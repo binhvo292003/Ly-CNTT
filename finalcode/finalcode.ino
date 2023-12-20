@@ -64,10 +64,11 @@ unsigned long buttonDelayTime = 0;
 unsigned long motionTime = 0;
 unsigned long waterWarningTime = 0;
 unsigned long generalStatusTime = 0;
+unsigned long generalWaterTime = 0;
 unsigned long waterTime = 0;
 
 int detectMotion = 0;
-
+int firstWatering = 0;
 void setup() {
   Serial.begin(115200);
   pinMode(PIR_PIN, INPUT);
@@ -127,6 +128,7 @@ void mqttConnect() {
     if (mqttClient.connect(clientId.c_str())) {
       Serial.println("Connected to MQTT");
       mqttClient.subscribe(mqttTopic_sub);
+
     } else {
       Serial.println("Failed, try again in 5 seconds");
       delay(5000);
@@ -164,6 +166,7 @@ void waterPlant(float soil, float temperature, float humidity) {
     if (isConfigured == 0) {
       if (soil < 50.0) {
         if (!isRelayActivated) {
+          firstWatering = 1;
           isRelayActivated = 1;
           digitalWrite(RELAY_PIN, HIGH);
           previousWaterMillis = millis();
@@ -216,7 +219,7 @@ void waterButton() {
   if (water == 1) {
     buttonState = digitalRead(BUTTON_PIN);
 
-    Serial.println(buttonState);
+    //Serial.println(buttonState);
 
     if (buttonState == HIGH) {
       relayState = HIGH;
@@ -236,7 +239,7 @@ void waterButton() {
 
 int getSoilPercent() {
   int sensorValue = analogRead(SOIL_PIN);
-  Serial.println(sensorValue);
+  //Serial.println(sensorValue);
 
   int moisturePercent = map(sensorValue, 0, 1023, 100, 0);
   return moisturePercent;
@@ -247,7 +250,7 @@ void getMotion() {
 
   if (pirState == HIGH && detectMotion == 0) {
     sendRequest(pirRequest, previousLCDMillis, lcdInterval);
-    Serial.println("Intruder detected!");
+    //Serial.println("Intruder detected!");
     digitalWrite(RELAY_PIN, LOW);
     detectMotion = 1;
     motionTime = millis();
@@ -264,7 +267,7 @@ void warningWater() {
     lcd.clear();
     lcd.setCursor(0, 0);
     lcd.print("OUT OF WATER");
-    Serial.println("OUT OF WATER");
+    //Serial.println("OUT OF WATER");
     sendRequest(noWaterRequest, previousLCDMillis, lcdInterval);
     previousLCDMillis = millis();
     waterWarningTime = millis();
@@ -296,13 +299,15 @@ void loop() {
       String payload = String(temperature) + "," + String(humidity) + "," + String(soil) + "," + String(pirValue) + "," + String(water);
       mqttClient.publish(mqttTopic_status_pub, payload.c_str());
       generalStatusTime = millis();
+      //Serial.println("Sent general status");
     }
 
-    if (isRelayActivated && millis() - generalStatusTime >= 5000) {
+    if (firstWatering == 1 && millis() - generalWaterTime >= 5000) {
       String payload = String(soil) + "," + String(temperature) + "," + String(humidity);
       mqttClient.publish(mqttTopic_pub, payload.c_str());
-      isRelayActivated = 0;
-      generalStatusTime = millis();
+      generalWaterTime = millis();
+      firstWatering = 0;
+      //Serial.println("Sent water history");
     }
   }
   mqttClient.loop();
